@@ -1,0 +1,61 @@
+# Local stack (repo root): docker compose up
+# Rebuild images after Dockerfile/package changes: docker compose up --build
+# UI: http://localhost:5174  | API: http://localhost:3000  | Swagger: http://localhost:3000/api-docs
+# Reset DB volume after a bad migration state: docker compose down -v
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./project-simulator
+    environment:
+      SERVER_PORT: "3000"
+      NODE_ENV: development
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: postgres
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_SSL: "false"
+      CHOKIDAR_USEPOLLING: "true"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./project-simulator:/app
+      # Preserve image `node_modules` on first start (bind mount would hide them).
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./project-simulator-front
+    environment:
+      API_DEV_PROXY_TARGET: http://backend:3000
+      CHOKIDAR_USEPOLLING: "true"
+    # Host 5174 avoids clashing with a local Vite dev server on 5173.
+    ports:
+      - "5174:5173"
+    volumes:
+      - ./project-simulator-front:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
